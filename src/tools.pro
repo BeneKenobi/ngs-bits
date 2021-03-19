@@ -417,3 +417,7 @@ SUBDIRS += VariantRanking
 tools-TEST.depends += VariantRanking
 VariantRanking.depends = cppNGSD
 
+SUBDIRS += BedpeAnnotateGnomadSv
+tools-TEST.depends += BedpeAnnotateGnomadSv
+BedpeAnnotateGnomadSv.depends = cppNGSD
+
