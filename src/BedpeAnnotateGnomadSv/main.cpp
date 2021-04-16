@@ -72,9 +72,29 @@ public:
 		{
 			BedpeLine line = bedpe_file[i];
 
-			// find matching SV(s)
+			// find matching SV(s)			
+			QVector<int> indices;
+			if (line.type() == StructuralVariantType::BND)
+			{
+				indices = anno_index.matchingIndices(line.chr1(), line.start1(), line.end1());
+			}
+			else
+			{
+				indices = anno_index.matchingIndices(line.chr1(), line.start1(), line.end2());
+			}
 
-			// annotate gnomAD frequency
+			foreach (int idx, indices)
+			{
+				// filter by type
+
+				// exact match
+
+				// extract gnomAD scores
+			}
+
+
+			QByteArray gnomad_af_string;
+			QByteArray gnomad_hom_hemi_string;
 
 
 
@@ -101,11 +121,19 @@ public:
 			QList<QByteArray> annotations = line.annotations();
 			if (i_gnomad > -1)
 			{
-				annotations[i_gnomad] = additional_annotation_string;
+				annotations[i_gnomad] = gnomad_af_string;
 			}
 			else
 			{
-				annotations.append(additional_annotation_string);
+				annotations.append(gnomad_af_string);
+			}
+			if (i_gnomad_hom_hemi > -1)
+			{
+				annotations[i_gnomad_hom_hemi] = gnomad_hom_hemi_string;
+			}
+			else
+			{
+				annotations.append(gnomad_hom_hemi_string);
 			}
 			line.setAnnotations(annotations);
 
