@@ -45,6 +45,43 @@ public:
 		if (!gnomad_file.isSorted()) gnomad_file.sort();
 		ChromosomalIndex<BedFile> anno_index(gnomad_file);
 
+        //parse gnomad file header
+        QByteArrayList gnomad_header;
+        foreach(const QByteArray& line, gnomad_file.headers())
+        {
+            if(line.startsWith("#CHROM_A"))
+            {
+               gnomad_header = line.trimmed().split('\t');
+               break;
+            }
+        }
+        if(gnomad_header.size() <= 0) THROW(FileParseException, "No header line found in gnomad BED file!");
+
+        // Debug
+        foreach(QByteArray item, gnomad_header)
+        {
+            qDebug() << item;
+        }
+
+        // get required column indices (-3, because annotation starts at the 4th column
+        int i_gnomad_chr2 = gnomad_header.indexOf("CHROM_B") - 3;
+        if (i_gnomad_chr2 < 0 ) THROW(FileParseException, "Column 'CHROM_B' not found in gnomAD file!");
+        int i_gnomad_start2 = gnomad_header.indexOf("START_B") - 3;
+        if (i_gnomad_start2 < 0 ) THROW(FileParseException, "Column 'START_B' not found in gnomAD file!");
+        int i_gnomad_end2 = gnomad_header.indexOf("END_B") - 3;
+        if (i_gnomad_end2 < 0 ) THROW(FileParseException, "Column 'END_B' not found in gnomAD file!");
+        int i_gnomad_type = gnomad_header.indexOf("TYPE") - 3;
+        if (i_gnomad_type < 0 ) THROW(FileParseException, "Column 'TYPE' not found in gnomAD file!");
+
+        int i_gnomad_an = gnomad_header.indexOf("AN") - 3;
+        if (i_gnomad_an < 0 ) THROW(FileParseException, "Column 'AN' not found in gnomAD file!");
+        int i_gnomad_af = gnomad_header.indexOf("AF") - 3;
+        if (i_gnomad_af < 0 ) THROW(FileParseException, "Column 'AF' not found in gnomAD file!");
+        int i_gnomad_hemi = gnomad_header.indexOf("HEMI") - 3;
+        if (i_gnomad_hemi < 0 ) THROW(FileParseException, "Column 'HEMI' not found in gnomAD file!");
+        int i_gnomad_hom = gnomad_header.indexOf("HOM") - 3;
+        if (i_gnomad_hom < 0 ) THROW(FileParseException, "Column 'HOM' not found in gnomAD file!");
+
 
 
 		//process BEDPE file
@@ -68,29 +105,64 @@ public:
 		output_buffer << "#CHROM_A\tSTART_A\tEND_A\tCHROM_B\tSTART_B\tEND_B\t" + header.join("\t");
 
 
+        // debug
+        int n_matches = 0;
+
+
 		for(int i=0; i<bedpe_file.count(); ++i)
 		{
-			BedpeLine line = bedpe_file[i];
+            BedpeLine sv = bedpe_file[i];
 
 			// find matching SV(s)			
 			QVector<int> indices;
-			if (line.type() == StructuralVariantType::BND)
+            if (sv.type() == StructuralVariantType::BND)
 			{
-				indices = anno_index.matchingIndices(line.chr1(), line.start1(), line.end1());
+                indices = anno_index.matchingIndices(sv.chr1(), sv.start1(), sv.end1());
 			}
 			else
 			{
-				indices = anno_index.matchingIndices(line.chr1(), line.start1(), line.end2());
+                indices = anno_index.matchingIndices(sv.chr1(), sv.start1(), sv.end2());
 			}
 
 			foreach (int idx, indices)
 			{
+                const BedLine& gnomad_line = gnomad_file[idx];
+
 				// filter by type
+                if (sv.type() != BedpeFile::stringToType(gnomad_line.annotations().at(i_gnomad_type))) continue;
 
 				// exact match
+                if (sv.type() == StructuralVariantType::BND)
+                {
+                    //check first coos
+                    if(!gnomad_line.overlapsWith(sv.chr1(), sv.start1(), sv.end1())) continue;
 
-				// extract gnomAD scores
+                    //check second coos
+                    BedLine second_coos = BedLine(Chromosome(gnomad_line.annotations().at(i_gnomad_chr2)),
+                                                  Helper::toInt(gnomad_line.annotations().at(i_gnomad_start2)),
+                                                  Helper::toInt(gnomad_line.annotations().at(i_gnomad_end2)));
+                    if(!second_coos.overlapsWith(sv.chr2(), sv.start2(), sv.end2())) continue;
+                }
+                else
+                {
+                    //check start
+                    if (sv.start1() > gnomad_line.start() || sv.end1() < gnomad_line.start()) continue;
+
+                    //check end
+                    if (sv.start2() > gnomad_line.end() || sv.end2() < gnomad_line.end()) continue;
+                }
+
+                //debug
+                qDebug() << gnomad_line.toString(true) << gnomad_line.annotations().join("\t");
+                qDebug() << sv.toString();
+                n_matches++;
+
+
+                // extract gnomAD scores
 			}
+
+            // debug
+//            if (i++ > 100) break;
 
 
 			QByteArray gnomad_af_string;
@@ -118,7 +190,7 @@ public:
 //				}
 //			}
 
-			QList<QByteArray> annotations = line.annotations();
+            QList<QByteArray> annotations = sv.annotations();
 			if (i_gnomad > -1)
 			{
 				annotations[i_gnomad] = gnomad_af_string;
@@ -135,10 +207,10 @@ public:
 			{
 				annotations.append(gnomad_hom_hemi_string);
 			}
-			line.setAnnotations(annotations);
+            sv.setAnnotations(annotations);
 
 			//add annotated line to buffer
-			output_buffer << line.toTsv();
+            output_buffer << sv.toTsv();
 		}
 
 
@@ -152,6 +224,10 @@ public:
 		}
 		output_stream.flush();
 		cnv_output_file->close();
+
+
+        // stats
+        qDebug() << "Found matches: " << n_matches;
 	}
 
 };
