@@ -26,6 +26,7 @@ public:
 		//optional
 		addInfile("in", "Input BEDPE file. If unset, reads from STDIN.", true);
 		addOutfile("out", "Output BEDPE file. If unset, writes to STDOUT.", true);
+		addInt("offset", "Distance for fuzzy match of SVs.", true, 0);
 
 		changeLog(2020, 3, 20, "Initial commit.");
 	}
@@ -36,6 +37,8 @@ public:
 		QString in = getInfile("in");
 		QString bed = getInfile("bed");
 		QString out = getOutfile("out");
+		int offset = getInt("offset");
+		if (offset < 0) THROW(ArgumentException, "Offset hast to be positive!");
 
 
 
@@ -73,14 +76,25 @@ public:
         int i_gnomad_type = gnomad_header.indexOf("TYPE") - 3;
         if (i_gnomad_type < 0 ) THROW(FileParseException, "Column 'TYPE' not found in gnomAD file!");
 
-        int i_gnomad_an = gnomad_header.indexOf("AN") - 3;
-        if (i_gnomad_an < 0 ) THROW(FileParseException, "Column 'AN' not found in gnomAD file!");
         int i_gnomad_af = gnomad_header.indexOf("AF") - 3;
         if (i_gnomad_af < 0 ) THROW(FileParseException, "Column 'AF' not found in gnomAD file!");
         int i_gnomad_hemi = gnomad_header.indexOf("HEMI") - 3;
         if (i_gnomad_hemi < 0 ) THROW(FileParseException, "Column 'HEMI' not found in gnomAD file!");
         int i_gnomad_hom = gnomad_header.indexOf("HOM") - 3;
         if (i_gnomad_hom < 0 ) THROW(FileParseException, "Column 'HOM' not found in gnomAD file!");
+
+		//af of sub-populations
+		int i_gnomad_afr_af = gnomad_header.indexOf("AFR_AF") - 3;
+		if (i_gnomad_afr_af < 0 ) THROW(FileParseException, "Column 'AFR_AF' not found in gnomAD file!");
+		int i_gnomad_amr_af = gnomad_header.indexOf("AMR_AF") - 3;
+		if (i_gnomad_amr_af < 0 ) THROW(FileParseException, "Column 'AMR_AF' not found in gnomAD file!");
+		int i_gnomad_eas_af = gnomad_header.indexOf("EAS_AF") - 3;
+		if (i_gnomad_eas_af < 0 ) THROW(FileParseException, "Column 'EAS_AF' not found in gnomAD file!");
+		int i_gnomad_eur_af = gnomad_header.indexOf("EUR_AF") - 3;
+		if (i_gnomad_eur_af < 0 ) THROW(FileParseException, "Column 'EUR_AF' not found in gnomAD file!");
+		int i_gnomad_oth_af = gnomad_header.indexOf("OTH_AF") - 3;
+		if (i_gnomad_oth_af < 0 ) THROW(FileParseException, "Column 'OTH_AF' not found in gnomAD file!");
+
 
 
 
@@ -91,6 +105,8 @@ public:
 		// check if annotation already exisits:
 		int i_gnomad = bedpe_file.annotationIndexByName("gnomAD", false);
 		int i_gnomad_hom_hemi = bedpe_file.annotationIndexByName("gnomAD_hom_hemi", false);
+		int i_gnomad_sub = bedpe_file.annotationIndexByName("gnomAD_sub", false);
+
 
 
 		// create output buffer and copy comments and header
@@ -101,6 +117,7 @@ public:
 		// modify header if gene columns not already present
 		if (i_gnomad < 0) header.append("gnomAD");
 		if (i_gnomad_hom_hemi < 0) header.append("gnomAD_hom_hemi");
+		if (i_gnomad_sub < 0) header.append("gnomAD_sub");
 		// copy header
 		output_buffer << "#CHROM_A\tSTART_A\tEND_A\tCHROM_B\tSTART_B\tEND_B\t" + header.join("\t");
 
@@ -108,21 +125,33 @@ public:
         // debug
         int n_matches = 0;
 
-
 		for(int i=0; i<bedpe_file.count(); ++i)
 		{
             BedpeLine sv = bedpe_file[i];
+
+			//scores
+			QByteArrayList gnomad_af;
+			QByteArrayList gnomad_hemi;
+			QByteArrayList gnomad_hom;
+			QByteArrayList gnomad_sub;
+
+			// apply offset
+			int sv_s1 = std::max(0, sv.start1() - offset);
+			int sv_e1 = sv.end1() + offset;
+			int sv_s2 = std::max(0, sv.start2() - offset);
+			int sv_e2 = sv.end2() + offset;
 
 			// find matching SV(s)			
 			QVector<int> indices;
             if (sv.type() == StructuralVariantType::BND)
 			{
-                indices = anno_index.matchingIndices(sv.chr1(), sv.start1(), sv.end1());
+				indices = anno_index.matchingIndices(sv.chr1(), sv_s1, sv_e1);
 			}
 			else
 			{
-                indices = anno_index.matchingIndices(sv.chr1(), sv.start1(), sv.end2());
+				indices = anno_index.matchingIndices(sv.chr1(), sv_s1, sv_e2);
 			}
+
 
 			foreach (int idx, indices)
 			{
@@ -135,60 +164,63 @@ public:
                 if (sv.type() == StructuralVariantType::BND)
                 {
                     //check first coos
-                    if(!gnomad_line.overlapsWith(sv.chr1(), sv.start1(), sv.end1())) continue;
+					if(!gnomad_line.overlapsWith(sv.chr1(), sv_s1, sv_e1)) continue;
 
                     //check second coos
                     BedLine second_coos = BedLine(Chromosome(gnomad_line.annotations().at(i_gnomad_chr2)),
                                                   Helper::toInt(gnomad_line.annotations().at(i_gnomad_start2)),
                                                   Helper::toInt(gnomad_line.annotations().at(i_gnomad_end2)));
-                    if(!second_coos.overlapsWith(sv.chr2(), sv.start2(), sv.end2())) continue;
+					if(!second_coos.overlapsWith(sv.chr2(), sv_s2, sv_e2)) continue;
                 }
                 else
                 {
                     //check start
-                    if (sv.start1() > gnomad_line.start() || sv.end1() < gnomad_line.start()) continue;
+					if (sv_s1 > gnomad_line.start() || sv_e1 < gnomad_line.start()) continue;
 
                     //check end
-                    if (sv.start2() > gnomad_line.end() || sv.end2() < gnomad_line.end()) continue;
+					if (sv_s2 > gnomad_line.end() || sv_e2 < gnomad_line.end()) continue;
                 }
 
                 //debug
-                qDebug() << gnomad_line.toString(true) << gnomad_line.annotations().join("\t");
-                qDebug() << sv.toString();
+//                qDebug() << gnomad_line.toString(true) << gnomad_line.annotations().join("\t");
+//                qDebug() << sv.toString();
                 n_matches++;
 
-
                 // extract gnomAD scores
-			}
+				gnomad_af << gnomad_line.annotations().at(i_gnomad_af);
+				gnomad_hom << gnomad_line.annotations().at(i_gnomad_hom);
+				gnomad_hemi << gnomad_line.annotations().at(i_gnomad_hemi);
 
-            // debug
-//            if (i++ > 100) break;
+				// parse sub-populations
+				QByteArrayList tmp;
+				tmp << QByteArray::number(Helper::toDouble(gnomad_line.annotations().at(i_gnomad_afr_af)), 'f', 4);
+				tmp << QByteArray::number(Helper::toDouble(gnomad_line.annotations().at(i_gnomad_amr_af)), 'f', 4);
+				tmp << QByteArray::number(Helper::toDouble(gnomad_line.annotations().at(i_gnomad_eas_af)), 'f', 4);
+				tmp << QByteArray::number(Helper::toDouble(gnomad_line.annotations().at(i_gnomad_eur_af)), 'f', 4);
+				tmp << QByteArray::number(Helper::toDouble(gnomad_line.annotations().at(i_gnomad_oth_af)), 'f', 4);
+
+				gnomad_sub << tmp.join(',');
+			}
 
 
 			QByteArray gnomad_af_string;
 			QByteArray gnomad_hom_hemi_string;
+			QByteArray gnomad_sub_string;
 
+			// check if match found
+			if (gnomad_af.size() > 0)
+			{
+				//warn if multiple matches found
+				if (gnomad_af.size() > 1)
+				{
+					qDebug() << "Multiple matches found for SV " << sv.toString();
+				}
 
+				gnomad_af_string = QByteArray::number(Helper::toDouble(gnomad_af.at(0)), 'f', 4);
+				gnomad_hom_hemi_string = gnomad_hom.at(0) + "," + gnomad_hemi.at(0);
+				gnomad_sub_string = gnomad_sub.at(0);
+			}
 
-//			BedFile affected_region = line.affectedRegion();
-
-//			//determine annotations
-//			QByteArrayList additional_annotations;
-
-//			for(int j=0; j<affected_region.count(); ++j)
-//			{
-//				BedLine& region = affected_region[j];
-//				QVector<int> indices = anno_index.matchingIndices(region.chr(), region.start(), region.end());
-//				foreach(int index, indices)
-//				{
-//					const BedLine& match = gnomad_file[index];
-//					bool anno_exists = match.annotations().count()>i_col;
-//					if (anno_exists)
-//					{
-//						additional_annotations << match.annotations()[i_col];
-//					}
-//				}
-//			}
 
             QList<QByteArray> annotations = sv.annotations();
 			if (i_gnomad > -1)
@@ -206,6 +238,14 @@ public:
 			else
 			{
 				annotations.append(gnomad_hom_hemi_string);
+			}
+			if (i_gnomad_sub > -1)
+			{
+				annotations[i_gnomad_sub] = gnomad_sub_string;
+			}
+			else
+			{
+				annotations.append(gnomad_sub_string);
 			}
             sv.setAnnotations(annotations);
 
