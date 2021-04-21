@@ -60,12 +60,6 @@ public:
         }
         if(gnomad_header.size() <= 0) THROW(FileParseException, "No header line found in gnomad BED file!");
 
-        // Debug
-        foreach(QByteArray item, gnomad_header)
-        {
-            qDebug() << item;
-        }
-
         // get required column indices (-3, because annotation starts at the 4th column
         int i_gnomad_chr2 = gnomad_header.indexOf("CHROM_B") - 3;
         if (i_gnomad_chr2 < 0 ) THROW(FileParseException, "Column 'CHROM_B' not found in gnomAD file!");
@@ -124,6 +118,13 @@ public:
 
         // debug
         int n_matches = 0;
+		QMap<QString, int> n_matches_by_type;
+		n_matches_by_type["BND"] = 0;
+		n_matches_by_type["DEL"] = 0;
+		n_matches_by_type["DUP"] = 0;
+		n_matches_by_type["INS"] = 0;
+		n_matches_by_type["INV"] = 0;
+		int n_bnd_matches = 0;
 
 		for(int i=0; i<bedpe_file.count(); ++i)
 		{
@@ -163,13 +164,21 @@ public:
 				// exact match
                 if (sv.type() == StructuralVariantType::BND)
                 {
+					//debug
+					n_bnd_matches++;
+
                     //check first coos
 					if(!gnomad_line.overlapsWith(sv.chr1(), sv_s1, sv_e1)) continue;
 
                     //check second coos
                     BedLine second_coos = BedLine(Chromosome(gnomad_line.annotations().at(i_gnomad_chr2)),
                                                   Helper::toInt(gnomad_line.annotations().at(i_gnomad_start2)),
-                                                  Helper::toInt(gnomad_line.annotations().at(i_gnomad_end2)));
+												  Helper::toInt(gnomad_line.annotations().at(i_gnomad_end2)));
+
+//					qDebug() << second_coos.toString(true);
+//					qDebug() << BedLine(sv.chr2(), sv_s2, sv_e2).toString(true);
+//					qDebug() << "\n";
+
 					if(!second_coos.overlapsWith(sv.chr2(), sv_s2, sv_e2)) continue;
                 }
                 else
@@ -219,6 +228,9 @@ public:
 				gnomad_af_string = QByteArray::number(Helper::toDouble(gnomad_af.at(0)), 'f', 4);
 				gnomad_hom_hemi_string = gnomad_hom.at(0) + "," + gnomad_hemi.at(0);
 				gnomad_sub_string = gnomad_sub.at(0);
+
+				//debug
+				n_matches_by_type[StructuralVariantTypeToString(sv.type())]++;
 			}
 
 
@@ -251,6 +263,7 @@ public:
 
 			//add annotated line to buffer
             output_buffer << sv.toTsv();
+
 		}
 
 
@@ -268,6 +281,8 @@ public:
 
         // stats
         qDebug() << "Found matches: " << n_matches;
+		qDebug() << n_matches_by_type;
+		qDebug() << "Matching BNDs:" << n_bnd_matches;
 	}
 
 };
