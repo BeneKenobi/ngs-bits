@@ -5,10 +5,12 @@
 #include "QMessageBox"
 #include <QDebug>
 
-SomaticVariantInterpreterWidget::SomaticVariantInterpreterWidget(const Variant& var, const VariantList& vl, QWidget *parent): QWidget(parent),
-	ui_(new Ui::SomaticVariantInterpreterWidget),
-	snv_(var),
-	vl_(vl)
+SomaticVariantInterpreterWidget::SomaticVariantInterpreterWidget(int variant_index, const VariantList& vl, QWidget *parent)
+	: QWidget(parent)
+	, ui_(new Ui::SomaticVariantInterpreterWidget)
+	, variant_index_(variant_index)
+	, snv_(vl[variant_index])
+	, vl_(vl)
 {
 	ui_->setupUi(this);
 
@@ -21,13 +23,13 @@ SomaticVariantInterpreterWidget::SomaticVariantInterpreterWidget(const Variant& 
 	}
 
 
-	QString variant_description = var.toString(true);
+	QString variant_description = vl[variant_index].toString(true);
 
 
 	int i_co_sp = vl.annotationIndexByName("coding_and_splicing", true, false);
 	if(i_co_sp != -1)
 	{
-		VariantTranscript trans = var.transcriptAnnotations(i_co_sp).first();
+		VariantTranscript trans = vl[variant_index].transcriptAnnotations(i_co_sp).first();
 
 		variant_description +=  " <b>" + trans.gene + "</b>:" +trans.hgvs_c + " <b>" + trans.gene + "</b>:" + trans.hgvs_p;
 	}
@@ -177,25 +179,27 @@ void SomaticVariantInterpreterWidget::disableUnapplicableParameters()
 
 void SomaticVariantInterpreterWidget::storeInNGSD()
 {
-	if(!LoginManager::active()) return;
-	NGSD db;
-
 	SomaticViccData vicc_data = getParameters();
-	if(!vicc_data.isValid()) return;
+
 	try
 	{
-		db.setSomaticViccData(snv_, vicc_data, LoginManager::user());
+		if(!vicc_data.isValid())
+		{
+			THROW(ArgumentException, "VICC data is not valid!");
+		}
+
+		NGSD().setSomaticViccData(snv_, vicc_data, LoginManager::user());
 	}
 	catch(Exception e)
 	{
-		QMessageBox::warning(this, "Could not store somatic VICC interpretation", "Could not store somatic VICC interpretation in NGSD. Error message: " + e.message());
+		QMessageBox::warning(this, "Error storing VICC data", "Could not store somatic VICC interpretation to NGSD.\n\nError message:\n" + e.message());
+		return;
 	}
 
 	//update NGSD meta data labels
 	setNGSDMetaData();
 
-
-	emit stored(snv_, SomaticVariantInterpreter::viccScoreAsString(vicc_data), vicc_data.comment);
+	emit stored(variant_index_, SomaticVariantInterpreter::viccScoreAsString(vicc_data), vicc_data.comment);
 }
 
 

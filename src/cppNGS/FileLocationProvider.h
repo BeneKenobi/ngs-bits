@@ -8,12 +8,12 @@
 #include "FileLocation.h"
 #include "FileLocationList.h"
 
+//Analysis file location provider interface for local/client-server mode.
 class CPPNGSSHARED_EXPORT FileLocationProvider
 {
 public:
-	virtual ~FileLocationProvider(){}
 
-	//Returns if the analysis is locally available (and not on server).
+	//Returns if the analysis is locally available (not in client-server mode).
 	virtual bool isLocal() const = 0;
 
 	//############################## analysis-specific files ##############################
@@ -23,6 +23,8 @@ public:
 	virtual FileLocation getAnalysisSvFile() const = 0;
 	//Returns the copy-number call TSV file of the current analysis
 	virtual FileLocation getAnalysisCnvFile() const = 0;
+	//Returns the mosaic copy-number call TSV file of the current analysis
+	virtual FileLocation getAnalysisMosaicCnvFile() const = 0;
 	//Returns the UPD calls TSV file of the current analysis (works for GERMLINE_TRIO only)
 	virtual FileLocation getAnalysisUpdFile() const = 0;
 	//Returns the repeat expansion locus image of the current analysis

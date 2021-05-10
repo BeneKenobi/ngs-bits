@@ -47,15 +47,10 @@ public:
 		QString build = getEnum("build");
 
 		//process
-		out << "#sample\tsnps\tAFR\tEUR\tSAS\tEAS\tpopulation" << endl;
+		out << "#sample\tsnps\tAFR\tEUR\tSAS\tEAS\tpopulation" << endl; //TODO Add probabilty for each population > MARC
 		foreach(QString filename, in)
 		{
-
-			//load variant list
-			 VcfFile vl;
-			vl.load(filename);
-
-			AncestryEstimates ancestry = Statistics::ancestry(build, vl, min_snps, pop_dist);
+			AncestryEstimates ancestry = Statistics::ancestry(build, filename, min_snps, pop_dist);
 			out << QFileInfo(filename).fileName()
 				<< "\t" << ancestry.snps
 				<< "\t" << QString::number(ancestry.afr, 'f', 4)

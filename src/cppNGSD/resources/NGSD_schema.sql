@@ -162,7 +162,7 @@ CREATE  TABLE IF NOT EXISTS `processing_system`
   `name_manufacturer` VARCHAR(100) NOT NULL,
   `adapter1_p5` VARCHAR(45) NULL DEFAULT NULL,
   `adapter2_p7` VARCHAR(45) NULL DEFAULT NULL,
-  `type` ENUM('WGS','WGS (shallow)','WES','Panel','Panel Haloplex','Panel MIPs','RNA','ChIP-Seq', 'cfDNA (patient-specific)') NOT NULL,
+  `type` ENUM('WGS','WGS (shallow)','WES','Panel','Panel Haloplex','Panel MIPs','RNA','ChIP-Seq', 'cfDNA (patient-specific)', 'cfDNA') NOT NULL,
   `shotgun` TINYINT(1) NOT NULL,
   `umi_type` ENUM('n/a','HaloPlex HS','SureSelect HS','ThruPLEX','Safe-SeqS','MIPs','QIAseq','IDT-UDI-UMI','IDT-xGen-Prism') NOT NULL DEFAULT 'n/a',
   `target_file` VARCHAR(255) NULL DEFAULT NULL COMMENT 'filename of sub-panel BED file relative to the megSAP enrichment folder.',
@@ -265,7 +265,7 @@ CREATE  TABLE IF NOT EXISTS `runqc_lane`
   `yield` FLOAT NOT NULL,
   `error_rate` FLOAT DEFAULT NULL,
   `q30_perc` FLOAT NOT NULL,
-  `occupied_perc` FLOAT NOT NULL,
+  `occupied_perc` FLOAT DEFAULT NULL,
   `runqc_read_id` INT(11) NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE (`runqc_read_id`, `lane_num`),
@@ -975,7 +975,7 @@ DEFAULT CHARACTER SET = utf8;
 
 CREATE TABLE IF NOT EXISTS `analysis_job`
 (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
   `type` enum('single sample','multi sample','trio','somatic') NOT NULL,
   `high_priority` TINYINT(1) NOT NULL,
   `args` text NOT NULL,
@@ -1984,3 +1984,113 @@ INDEX `pseudogene_gene_id` (`pseudogene_gene_id` ASC)
 ENGINE=InnoDB DEFAULT 
 CHARSET=utf8
 COMMENT='Gene-Pseudogene relation';
+
+-- -----------------------------------------------------
+-- Table `processed_sample_ancestry`
+-- -----------------------------------------------------
+CREATE  TABLE IF NOT EXISTS `processed_sample_ancestry`
+(
+  `processed_sample_id` INT(11) NOT NULL,
+  `num_snps` INT(11) NOT NULL,
+  `score_afr` FLOAT NOT NULL,
+  `score_eur` FLOAT NOT NULL,
+  `score_sas` FLOAT NOT NULL,
+  `score_eas` FLOAT NOT NULL,
+  `population` enum('AFR','EUR','SAS','EAS','ADMIXED/UNKNOWN') NOT NULL,
+PRIMARY KEY (`processed_sample_id`),
+CONSTRAINT `fk_processed_sample_ancestry_has_processed_sample`
+  FOREIGN KEY (`processed_sample_id`)
+  REFERENCES `processed_sample` (`id`)
+  ON DELETE NO ACTION
+  ON UPDATE NO ACTION
+)
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8;
+
+-- -----------------------------------------------------
+-- Table `subpanels`
+-- -----------------------------------------------------
+CREATE  TABLE IF NOT EXISTS `subpanels`
+(
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(200) NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_date` DATE NOT NULL,
+  `mode` ENUM('exon', 'gene') NOT NULL,
+  `extend` INT(11) NOT NULL,
+  `genes` MEDIUMTEXT NOT NULL,
+  `roi` MEDIUMTEXT NOT NULL,
+  `archived` TINYINT(1) NOT NULL,
+PRIMARY KEY (`id`),
+UNIQUE KEY `name` (`name`),
+INDEX(`created_by`),
+INDEX(`created_date`),
+INDEX(`archived`),
+CONSTRAINT `subpanels_created_by_user`
+  FOREIGN KEY (`created_by`)
+  REFERENCES `user` (`id`)
+  ON DELETE NO ACTION
+  ON UPDATE NO ACTION
+)
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8;
+
+-- -----------------------------------------------------
+-- Table `cfdna_panels`
+-- -----------------------------------------------------
+CREATE  TABLE IF NOT EXISTS `cfdna_panels`
+(
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `tumor_id` INT(11) NOT NULL,
+  `cfdna_id` INT(11) DEFAULT NULL,
+  `created_by` INT(11) DEFAULT NULL,
+  `created_date` DATE NOT NULL,
+  `processing_system_id` INT(11) NOT NULL,
+  `bed` MEDIUMTEXT NOT NULL,
+  `vcf` MEDIUMTEXT NOT NULL,
+PRIMARY KEY (`id`),
+INDEX(`created_by`),
+INDEX(`created_date`),
+INDEX(`tumor_id`),
+UNIQUE `unique_cfdna_panel`(`tumor_id`, `processing_system_id`),
+CONSTRAINT `cfdna_panels_tumor_id`
+  FOREIGN KEY (`tumor_id`)
+  REFERENCES `processed_sample` (`id`)
+  ON DELETE NO ACTION
+  ON UPDATE NO ACTION,
+CONSTRAINT `cfdna_panels_cfdna_id`
+  FOREIGN KEY (`cfdna_id`)
+  REFERENCES `processed_sample` (`id`)
+  ON DELETE NO ACTION
+  ON UPDATE NO ACTION,
+CONSTRAINT `cfdna_panels_created_by_user`
+  FOREIGN KEY (`created_by`)
+  REFERENCES `user` (`id`)
+  ON DELETE NO ACTION
+  ON UPDATE NO ACTION,
+CONSTRAINT `cfdna_panels_processing_system_id`
+  FOREIGN KEY (`processing_system_id`)
+  REFERENCES `processing_system` (`id`)
+  ON DELETE NO ACTION
+  ON UPDATE NO ACTION
+)
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8;
+
+-- -----------------------------------------------------
+-- Table `cfdna_panel_genes`
+-- -----------------------------------------------------
+CREATE  TABLE IF NOT EXISTS `cfdna_panel_genes`
+(
+  `id` INT(11) NOT NULL AUTO_INCREMENT,
+  `gene_name` VARCHAR(40) CHARACTER SET 'utf8' NOT NULL,
+  `chr` ENUM('chr1','chr2','chr3','chr4','chr5','chr6','chr7','chr8','chr9','chr10','chr11','chr12','chr13','chr14','chr15','chr16','chr17','chr18','chr19','chr20','chr21','chr22','chrY','chrX','chrMT') NOT NULL,
+  `start` INT(11) UNSIGNED NOT NULL,
+  `end` INT(11) UNSIGNED NOT NULL,
+  `date` DATE NOT NULL,
+  `bed` MEDIUMTEXT NOT NULL,
+PRIMARY KEY (`id`),
+UNIQUE INDEX(`gene_name`)
+)
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8;

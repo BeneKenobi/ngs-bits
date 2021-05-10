@@ -270,6 +270,7 @@ struct CPPNGSDSHARED_EXPORT ProcessedSampleData
 	QString lab_operator;
 	QString processing_input;
 	QString molarity;
+	QString ancestry;
 };
 
 ///Processing system information.
@@ -277,9 +278,6 @@ struct CPPNGSDSHARED_EXPORT ProcessingSystemData
 {
 	QString name;
 	QString name_short;
-	QString target_file;
-	QString target_gene_file; //Text file with one genes in target region (one gene per line)
-	QString target_amplicon_file; //amplicon file of target region
 	QString adapter1_p5;
 	QString adapter2_p7;
 	bool shotgun;
@@ -304,12 +302,22 @@ struct CPPNGSDSHARED_EXPORT GeneInfo
 
 	//gene inheritance mode
 	QString inheritance;
+
 	//genomAD o/e score for synonymous variants (default is NULL).
 	QString oe_syn;
 	//genomAD o/e score for missense variants (default is NULL).
 	QString oe_mis;
 	//genomAD o/e score for loss-of-function variants (default is NULL).
 	QString oe_lof;
+
+	//status of imprinting information
+	QString imprinting_status;
+	//sources allele of imprinted gene
+	QString imprinting_source_allele;
+
+	//list of pseudogenes (not all are HGNC-approved symbols)
+	QStringList pseudogenes;
+
 	//comments
 	QString comments;
 
@@ -370,10 +378,11 @@ struct CPPNGSDSHARED_EXPORT ProcessedSampleSearchParameters
 	QString r_name;
 	bool include_bad_quality_runs = true;
 	bool run_finished = false;
+	QDate r_before = QDate();
 	QString r_device_name;
 
 	//output options
-	bool add_path = false;
+	QString add_path;
 	bool add_disease_details = false;
 	bool add_outcome = false;
 	bool add_qc = false;
@@ -436,6 +445,28 @@ struct CPPNGSDSHARED_EXPORT EvaluationSheetData
 	bool filtered_by_multisample;
 	bool filtered_by_trio_stringent;
 	bool filtered_by_trio_relaxed;
+};
+
+/// Metadata of cfDNA panel DB entry
+struct CfdnaPanelInfo
+{
+	int id = -1;
+	int tumor_id = -1;
+	int cfdna_id = -1;
+	QByteArray created_by;
+	QDate created_date;
+	QByteArray processing_system;
+};
+
+/// cfDNA Gene entry
+struct CfdnaGeneEntry
+{
+	QString gene_name;
+	Chromosome chr;
+	int start;
+	int end;
+	QDate date;
+	BedFile bed = BedFile();
 };
 
 /// NGSD accessor.
@@ -544,18 +575,20 @@ public:
 	bool addPreferredTranscript(QByteArray transcript_name);
 
 	/*** phenotype handling (HPO, OMIM) ***/
+	///Returns the NGSD database ID of the phenotype given. Returns -1 or throws a DatabaseException if term name does not exist.
+	int phenotypeIdByAccession(const QByteArray& accession, bool throw_on_error=true);
+	///Returns the NGSD database ID of the phenotype given. Returns -1 or throws a DatabaseException if term name does not exist. Prefer phenotypeIdByAccession whenever possible since it is faster!
+	int phenotypeIdByName(const QByteArray& name, bool throw_on_error=true);
 	///Returns the phenotype for a given HPO accession.
-	Phenotype phenotypeByName(const QByteArray& name, bool throw_on_error=true);
-	///Returns the phenotype for a given HPO accession. If the accession is invalid, a phenotype with empty name is returned, or an error is thrown.
-	Phenotype phenotypeByAccession(const QByteArray& accession, bool throw_on_error=true);
+	const Phenotype& phenotype(int id);
 	///Returns the phenotypes of a gene
 	PhenotypeList phenotypes(const QByteArray& symbol);
 	///Returns all phenotypes matching the given search terms (or all terms if no search term is given)
 	PhenotypeList phenotypes(QStringList search_terms);
-	///Returns all genes associated to a phenotype
-	GeneSet phenotypeToGenes(const Phenotype& phenotype, bool recursive);
+	///Returns all genes associated to a phenotype. If is set terms of the following parent terms are ignored: "Mode of inheritance", "Frequency"
+	GeneSet phenotypeToGenes(int id, bool recursive, bool ignore_non_phenotype_terms=true);
 	///Returns all child terms of the given phenotype
-	PhenotypeList phenotypeChildTerms(const Phenotype& phenotype, bool recursive);
+	PhenotypeList phenotypeChildTerms(int term_id, bool recursive);
 	///Returns OMIM information for a gene. Several OMIM entries per gene are rare, but happen e.g. in the PAR region.
 	QList<OmimInfo> omimInfo(const QByteArray& symbol);
 	///Returns the accession (6 digit number) of the preferred OMIM phenotype for a gene. If unset, an empty string is returned.
@@ -659,8 +692,30 @@ public:
 	int processingSystemIdFromProcessedSample(QString ps_name);
 	///Returns the processing system information for a processed sample.
 	ProcessingSystemData getProcessingSystemData(int sys_id);
-	///Returns all processing systems (long name) and the corresponding target regions.
-	QMap<QString, QString> getProcessingSystems(bool skip_systems_without_roi);
+	///Returns the processing system target region file.
+	BedFile processingSystemRegions(int sys_id);
+	///Returns the processing system amplicon region file.
+	BedFile processingSystemAmplicons(int sys_id);
+	///Returns the processing system genes.
+	GeneSet processingSystemGenes(int sys_id);
+
+	///Retuns the list of sub-panel names.
+	QStringList subPanelList(bool archived);
+	///Returns the subpanel target region file.
+	BedFile subpanelRegions(QString name);
+	///Returns the subpanel genes.
+	GeneSet subpanelGenes(QString name);
+
+	///Returns all coresponding cfDNA panel info for a given processed sample
+	QList<CfdnaPanelInfo> cfdnaPanelInfo(const QString& processed_sample_id, const QString& processing_system_id = "");
+	///stores a cfDNA panel in the NGSD
+	void storeCfdnaPanel(const CfdnaPanelInfo& panel_info, const QByteArray& bed_content, const QByteArray& vcf_content);
+	///Returns the BED file of a given cfDNA panel
+	BedFile cfdnaPanelRegions(int id);
+	///Returns the VCF of a given cfDNA panel
+	VcfFile cfdnaPanelVcf(int id);
+	///Returns all available cfDNA gene entries
+	QList<CfdnaGeneEntry> cfdnaGenes();
 
 	///Returns all QC terms of the sample
 	QCCollection getQCData(const QString& processed_sample_id);
@@ -668,6 +723,7 @@ public:
 	QVector<double> getQCValues(const QString& accession, const QString& processed_sample_id);
 	///Returns the next processing ID for the given sample.
 	QString nextProcessingId(const QString& sample_id);
+
 
 	///Returns classification information
 	ClassificationInfo getClassification(const Variant& variant);
@@ -780,9 +836,6 @@ public:
 	///Returns quality metric values for a given metric for all samples of a given processing system
 	QVector<double> cnvCallsetMetrics(QString processing_system_id, QString metric_name);
 
-	///Returns the target file path (or sub-panel folder)
-	static QString getTargetFilePath(bool subpanels = false);
-
 	///Parses OBO file and updates QC term data
 	void updateQC(QString obo_file, bool debug=false);
 
@@ -805,12 +858,34 @@ protected:
 	///Returns the maxiumn allele frequency of a variant.
 	static double maxAlleleFrequency(const Variant& v, QList<int> af_column_index);
 
+	///Returns the target region folder.
+	static QString getTargetFilePath();
+
 	///The database adapter
 	QSharedPointer<QSqlDatabase> db_;
 	bool test_db_;
-	bool is_open_;
 
-	static QMap<QString, TableInfo> infos_;
+	///Caching functionality (static)
+	struct Cache
+	{
+		Cache();
+
+		QMap<QString, TableInfo> table_infos;
+		QHash<int, QList<int>> same_samples;
+		GeneSet approved_gene_names;
+		QMap<QString, QStringList> enum_values;
+		QMap<QByteArray, QByteArray> non_approved_to_approved_gene_names;
+		QHash<int, Phenotype> phenotypes_by_id;
+		QHash<QByteArray, int> phenotypes_accession_to_id;
+
+		BedFile gene_regions;
+		ChromosomalIndex<BedFile> gene_regions_index;
+
+		BedFile gene_exons;
+		ChromosomalIndex<BedFile> gene_exons_index;
+	};
+	static Cache& getCache();
+	void clearCache();
 };
 
 

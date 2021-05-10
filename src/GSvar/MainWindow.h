@@ -7,7 +7,6 @@
 #include "VariantList.h"
 #include "BedFile.h"
 #include "NGSD.h"
-#include "FileWatcher.h"
 #include "BusyDialog.h"
 #include "FilterCascade.h"
 #include "ReportSettings.h"
@@ -42,8 +41,6 @@ public:
 	static QString nobr();
 	///Upload variant to LOVD
 	void uploadtoLovd(int variant_index, int variant_index2 = -1);
-	///Returns the target file name without extension and date part prefixed with '_', or an empty string if no target file is set
-	QString targetFileName() const;
 
 	///Context menu for single variant
 	void contextMenuSingleVariant(QPoint pos, int index);
@@ -54,7 +51,7 @@ public:
 	void editVariantClassification(VariantList& variant, int index, bool is_somatic = false);
 
 	///Returns if germline report is supported for current variant list.
-	bool germlineReportSupported();
+	bool germlineReportSupported(bool require_ngsd = true);
 	///Returns the processed sample name for which report configuration is set and the report is generated.
 	QString germlineReportSample();
 	///Returns if somatic tumor-normal report is supported for current variant list.
@@ -74,6 +71,8 @@ public:
 public slots:
 	///Loads a variant list. Unloads the variant list if no file name is given
 	void loadFile(QString filename="");
+	///Checks if variant list is outdated
+	void checkVariantList(QStringList messages);
 	///Open dialog
 	void on_actionOpen_triggered();
 	///Open dialog by name (using NGSD)
@@ -262,14 +261,12 @@ public slots:
 	void openRecentFile();
 	///Loads the command line input file.
 	void delayedInitialization();
-	///Handles the re-loading the variant list when the file changes.
-	void handleInputFileChange();
 	///A variant has been double-clicked > open in IGV
 	void variantCellDoubleClicked(int row, int col);
 	///A variant header has beed double-clicked > edit report config
 	void variantHeaderDoubleClicked(int row);
 	///Initializes IGV for current samples. Returns if the initialization was successfull.
-	bool initializeIvg(QAbstractSocket& socket);
+	bool initializeIGV(QAbstractSocket& socket);
 	///Open region in IGV
 	void openInIGV(QString region);
 	///Opens a custom track in IGV
@@ -343,8 +340,8 @@ public slots:
 	void updateReportConfigHeaderIcon(int index);
 
 	///Mark the current variant list as changed. It is stored when the sample is closed.
-	void markVariantListChanged();
-	///Store the current variant list.
+	void markVariantListChanged(const Variant& variant, QString column, QString text);
+	///Store the current variant list. Do not call direclty - use markVariantListChanged instead!
 	void storeCurrentVariantList();
 
 	///Check for variant validations that need action.
@@ -361,8 +358,8 @@ public slots:
 
 	///Edit somatic variant interpretation (VICC consortium)
 	void editSomaticVariantInterpretation(const VariantList& vl, int index);
-	///Updates somatic variant interpreation annotation for specific variant of GSvar file (adds anno column if missing)
-	void updateSomaticVariantInterpretationAnno(const Variant& var, QString vicc_interpretation, QString vicc_comment);
+	///Updates somatic variant interpreation annotation for specific variant of GSvar file
+	void updateSomaticVariantInterpretationAnno(int index, QString vicc_interpretation, QString vicc_comment);
 
 protected:
 	virtual void dragEnterEvent(QDragEnterEvent* e);
@@ -381,15 +378,18 @@ private:
 
 	//DATA
 	QString filename_;
-	FileWatcher filewatcher_;
 	bool igv_initialized_;
 	VariantList variants_;
-	bool variants_changed_;
+	struct VariantListChange
+	{
+		Variant variant;
+		QString column;
+		QString text;
+	};
+	QList<VariantListChange> variants_changed_;
 	CnvList cnvs_;
 	BedpeFile svs_;
 	FilterResult filter_result_;
-	QString last_roi_filename_;
-	BedFile last_roi_;
 	QString last_report_path_;
 	PhenotypeList last_phenos_;
 	BedFile last_phenos_roi_;
@@ -402,8 +402,6 @@ private:
 	bool cf_dna_available;
 	QToolButton* cfdna_menu_btn_;
 	int igv_port_manual = -1;
-
-	QStringList rna_count_files_;
 
 	//SPECIAL
 	DelayedInitializationTimer init_timer_;

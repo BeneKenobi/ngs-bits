@@ -2353,19 +2353,7 @@ void FilterTrio::apply(const VariantList& variants, FilterResult& result) const
 	}
 
 	//load imprinting gene list
-	QMap<QByteArray, QByteArray> imprinting;
-	if (types.contains("imprinting"))
-	{
-		QStringList lines = Helper::loadTextFile(":/Resources/imprinting_genes.tsv", true, '#', true);
-		foreach(const QString& line, lines)
-		{
-			QStringList parts = line.split("\t");
-			if (parts.count()==2)
-			{
-				imprinting[parts[0].toLatin1()] = parts[1].toLatin1();
-			}
-		}
-	}
+	QMap<QByteArray, ImprintingInfo> imprinting = NGSHelper::imprintingGenes();
 
 	//apply
 	for(int i=0; i<variants.count(); ++i)
@@ -2452,7 +2440,7 @@ void FilterTrio::apply(const VariantList& variants, FilterResult& result) const
 				GeneSet genes = GeneSet::createFromText(v.annotations()[i_gene], ',');
 				foreach(const QByteArray& gene, genes)
 				{
-					if (imprinting.contains(gene) && (imprinting[gene]=="paternal" || imprinting[gene]=="both"))
+					if (imprinting.contains(gene) && imprinting[gene].source_allele!="maternal")
 					{
 						match = true;
 					}
@@ -2463,7 +2451,7 @@ void FilterTrio::apply(const VariantList& variants, FilterResult& result) const
 				GeneSet genes = GeneSet::createFromText(v.annotations()[i_gene], ',');
 				foreach(const QByteArray& gene, genes)
 				{
-					if (imprinting.contains(gene) && (imprinting[gene]=="maternal" || imprinting[gene]=="both"))
+					if (imprinting.contains(gene) && imprinting[gene].source_allele!="paternal")
 					{
 						match = true;
 					}
@@ -3674,10 +3662,11 @@ FilterSvPairedReadAF::FilterSvPairedReadAF()
 	name_ = "SV paired read AF";
 	type_ = VariantType::SVS;
 	description_ = QStringList() << "Show only SVs with a certain Paired Read Allele Frequency +/- 10%";
-    description_ << "(In trio/multi sample all samples must meet the requirements.)";
+    description_ << "(In trio/multi sample all (affected) samples must meet the requirements.)";
 	params_ << FilterParameter("Paired Read AF", FilterParameterType::DOUBLE, 0.0, "Paired Read Allele Frequency +/- 10%");
 	params_.last().constraints["min"] = "0.0";
 	params_.last().constraints["max"] = "1.0";
+	params_ << FilterParameter("only_affected", FilterParameterType::BOOL, false , "Apply filter only to affected Samples.");
 
 
 	checkIsRegistered();
@@ -3685,7 +3674,7 @@ FilterSvPairedReadAF::FilterSvPairedReadAF()
 
 QString FilterSvPairedReadAF::toText() const
 {
-	return name() + " = " + QByteArray::number(getDouble("Paired Read AF", false), 'f', 2) + " &plusmn; 10%";
+	return name() + " = " + QByteArray::number(getDouble("Paired Read AF", false), 'f', 2) + " &plusmn; 10%" + ((getBool("only_affected"))?" (only affected)": "");
 }
 
 void FilterSvPairedReadAF::apply(const BedpeFile& svs, FilterResult& result) const
@@ -3701,8 +3690,20 @@ void FilterSvPairedReadAF::apply(const BedpeFile& svs, FilterResult& result) con
 	// get allowed interval
 	double upper_limit = getDouble("Paired Read AF", false) + 0.1;
 	double lower_limit = getDouble("Paired Read AF", false) - 0.1;
+    bool only_affected = getBool("only_affected");
+
 
 	int format_col_index = svs.annotationIndexByName("FORMAT");
+
+	// determine analysis type
+	int sample_count = 1;
+	bool is_multisample = false;
+	if ((svs.format() == BedpeFileFormat::BEDPE_GERMLINE_MULTI) || (svs.format() == BedpeFileFormat::BEDPE_GERMLINE_TRIO))
+	{
+		// get sample count for multisample
+		sample_count = svs.sampleHeaderInfo().size();
+		is_multisample = true;
+	}
 
 	// iterate over all SVs
 	for(int i=0; i<svs.count(); ++i)
@@ -3711,16 +3712,15 @@ void FilterSvPairedReadAF::apply(const BedpeFile& svs, FilterResult& result) con
 
 		// get format keys and values
 		QByteArrayList format_keys = svs[i].annotations()[format_col_index].split(':');
-        int sample_count = 1;
-        if ((svs.format() == BedpeFileFormat::BEDPE_GERMLINE_MULTI) || (svs.format() == BedpeFileFormat::BEDPE_GERMLINE_TRIO))
-        {
-            // get sample count for multisample
-            sample_count = svs.sampleHeaderInfo().size();
-        }
 
-        for (int sample_idx = 1; sample_idx <= sample_count; ++sample_idx)
+
+
+		for (int sample_idx = 0; sample_idx < sample_count; ++sample_idx)
         {
-            QByteArrayList format_values = svs[i].annotations()[format_col_index + sample_idx].split(':');
+			// skip on control samples
+            if (is_multisample && only_affected && !svs.sampleHeaderInfo().at(sample_idx).isAffected()) continue;
+
+			QByteArrayList format_values = svs[i].annotations()[format_col_index + sample_idx + 1].split(':');
 
             // compute allele frequency
             QByteArrayList pr_af_entry = format_values[format_keys.indexOf("PR")].split(',');
@@ -3748,10 +3748,12 @@ FilterSvSplitReadAF::FilterSvSplitReadAF()
 	name_ = "SV split read AF";
 	type_ = VariantType::SVS;
 	description_ = QStringList() << "Show only SVs with a certain Split Read Allele Frequency +/- 10%";
-    description_ << "(In trio/multi sample all samples must meet the requirements.)";
+    description_ << "(In trio/multi sample all (affected) samples must meet the requirements.)";
 	params_ << FilterParameter("Split Read AF", FilterParameterType::DOUBLE, 0.0, "Split Read Allele Frequency +/- 10%");
 	params_.last().constraints["min"] = "0.0";
 	params_.last().constraints["max"] = "1.0";
+	params_ << FilterParameter("only_affected", FilterParameterType::BOOL, false , "Apply filter only to affected Samples.");
+
 
 
 	checkIsRegistered();
@@ -3759,7 +3761,7 @@ FilterSvSplitReadAF::FilterSvSplitReadAF()
 
 QString FilterSvSplitReadAF::toText() const
 {
-	return name() + " = " + QByteArray::number(getDouble("Split Read AF", false), 'f', 2) + " &plusmn; 10%";
+	return name() + " = " + QByteArray::number(getDouble("Split Read AF", false), 'f', 2) + " &plusmn; 10%"  + ((getBool("only_affected"))?" (only affected)" : "");
 }
 
 void FilterSvSplitReadAF::apply(const BedpeFile& svs, FilterResult& result) const
@@ -3775,8 +3777,19 @@ void FilterSvSplitReadAF::apply(const BedpeFile& svs, FilterResult& result) cons
 	// get allowed interval
 	double upper_limit = getDouble("Split Read AF", false) + 0.1;
 	double lower_limit = getDouble("Split Read AF", false) - 0.1;
+    bool only_affected = getBool("only_affected");
 
 	int format_col_index = svs.annotationIndexByName("FORMAT");
+
+	// determine analysis type
+	int sample_count = 1;
+	bool is_multisample = false;
+	if ((svs.format() == BedpeFileFormat::BEDPE_GERMLINE_MULTI) || (svs.format() == BedpeFileFormat::BEDPE_GERMLINE_TRIO))
+	{
+		// get sample count for multisample
+		sample_count = svs.sampleHeaderInfo().size();
+		is_multisample = true;
+	}
 
 	// iterate over all SVs
 	for(int i=0; i<svs.count(); ++i)
@@ -3795,16 +3808,12 @@ void FilterSvSplitReadAF::apply(const BedpeFile& svs, FilterResult& result) cons
             continue;
         }
 
-        int sample_count = 1;
-        if ((svs.format() == BedpeFileFormat::BEDPE_GERMLINE_MULTI) || (svs.format() == BedpeFileFormat::BEDPE_GERMLINE_TRIO))
+		for (int sample_idx = 0; sample_idx < sample_count; ++sample_idx)
         {
-            // get sample count for multisample
-            sample_count = svs.sampleHeaderInfo().size();
-        }
+			// skip on control samples
+            if (is_multisample && only_affected && !svs.sampleHeaderInfo().at(sample_idx).isAffected()) continue;
 
-        for (int sample_idx = 1; sample_idx <= sample_count; ++sample_idx)
-        {
-            QByteArrayList format_values = svs[i].annotations()[format_col_index + sample_idx].split(':');
+			QByteArrayList format_values = svs[i].annotations()[format_col_index + sample_idx + 1].split(':');
 
             QByteArrayList sr_af_entry = format_values[sr_idx].split(',');
             if (sr_af_entry.size() != 2) THROW(FileParseException, "Invalid split read entry (SR) in sv " + QByteArray::number(i) + "!")
@@ -3831,16 +3840,18 @@ FilterSvPeReadDepth::FilterSvPeReadDepth()
 	name_ = "SV PE read depth";
 	type_ = VariantType::SVS;
 	description_ = QStringList() << "Show only SVs with at least a certain number of Paired End Reads";
-    description_ << "(In trio/multi sample all samples must meet the requirements.)";
+    description_ << "(In trio/multi sample all (affected) samples must meet the requirements.)";
 	params_ << FilterParameter("PE Read Depth", FilterParameterType::INT, 0, "minimal number of Paired End Reads");
 	params_.last().constraints["min"] = "0";
+	params_ << FilterParameter("only_affected", FilterParameterType::BOOL, false , "Apply filter only to affected Samples.");
+
 
 	checkIsRegistered();
 }
 
 QString FilterSvPeReadDepth::toText() const
 {
-	return name() + " &ge; " + QByteArray::number(getInt("PE Read Depth", false));
+	return name() + " &ge; " + QByteArray::number(getInt("PE Read Depth", false))  + ((getBool("only_affected"))? " (only affected)": "");
 }
 
 void FilterSvPeReadDepth::apply(const BedpeFile& svs, FilterResult& result) const
@@ -3855,8 +3866,19 @@ void FilterSvPeReadDepth::apply(const BedpeFile& svs, FilterResult& result) cons
 
 	// get min PE read depth
 	int min_read_depth = getInt("PE Read Depth", false);
+    bool only_affected = getBool("only_affected");
 
 	int format_col_index = svs.annotationIndexByName("FORMAT");
+
+	// determine analysis type
+	int sample_count = 1;
+	bool is_multisample = false;
+	if ((svs.format() == BedpeFileFormat::BEDPE_GERMLINE_MULTI) || (svs.format() == BedpeFileFormat::BEDPE_GERMLINE_TRIO))
+	{
+		// get sample count for multisample
+		sample_count = svs.sampleHeaderInfo().size();
+		is_multisample = true;
+	}
 
 	// iterate over all SVs
 	for(int i=0; i<svs.count(); ++i)
@@ -3865,18 +3887,13 @@ void FilterSvPeReadDepth::apply(const BedpeFile& svs, FilterResult& result) cons
 
 		// get format keys and values
 		QByteArrayList format_keys = svs[i].annotations()[format_col_index].split(':');
-		QByteArrayList format_values = svs[i].annotations()[format_col_index + 1].split(':');
 
-        int sample_count = 1;
-        if ((svs.format() == BedpeFileFormat::BEDPE_GERMLINE_MULTI) || (svs.format() == BedpeFileFormat::BEDPE_GERMLINE_TRIO))
+		for (int sample_idx = 0; sample_idx < sample_count; ++sample_idx)
         {
-            // get sample count for multisample
-            sample_count = svs.sampleHeaderInfo().size();
-        }
+			// skip on control samples
+            if (is_multisample && only_affected && !svs.sampleHeaderInfo().at(sample_idx).isAffected()) continue;
 
-        for (int sample_idx = 1; sample_idx <= sample_count; ++sample_idx)
-        {
-            QByteArrayList format_values = svs[i].annotations()[format_col_index + sample_idx].split(':');
+			QByteArrayList format_values = svs[i].annotations()[format_col_index + sample_idx + 1].split(':');
 
             // get total read number
             QByteArrayList pe_read_entry = format_values[format_keys.indexOf("PR")].split(',');
@@ -4388,11 +4405,6 @@ void FilterSvTrio::apply(const BedpeFile &svs, FilterResult &result) const
 	int i_m = sample_headers.infoByStatus(false, "female").column_index;
 	int i_format_col = svs.annotationIndexByName("FORMAT");
 
-    //determine AF indices
-//    QList<int> tmp;
-//    tmp << i_c << i_f << i_m;
-//    std::sort(tmp.begin(), tmp.end());
-
     //get PAR region
     BedFile par_region = NGSHelper::pseudoAutosomalRegion("hg19");
 
@@ -4438,19 +4450,7 @@ void FilterSvTrio::apply(const BedpeFile &svs, FilterResult &result) const
     }
 
     //load imprinting gene list
-    QMap<QByteArray, QByteArray> imprinting;
-    if (types.contains("imprinting"))
-    {
-        QStringList lines = Helper::loadTextFile(":/Resources/imprinting_genes.tsv", true, '#', true);
-        foreach(const QString& line, lines)
-        {
-            QStringList parts = line.split("\t");
-            if (parts.count()==2)
-            {
-                imprinting[parts[0].toLatin1()] = parts[1].toLatin1();
-            }
-        }
-    }
+	QMap<QByteArray, ImprintingInfo> imprinting = NGSHelper::imprintingGenes();
 
     //apply
     for(int i=0; i<svs.count(); ++i)
@@ -4544,7 +4544,7 @@ void FilterSvTrio::apply(const BedpeFile &svs, FilterResult &result) const
                 GeneSet genes = GeneSet::createFromText(sv.annotations()[i_gene], ',');
                 foreach(const QByteArray& gene, genes)
                 {
-                    if (imprinting.contains(gene) && (imprinting[gene]=="paternal" || imprinting[gene]=="both"))
+					if (imprinting.contains(gene) && imprinting[gene].source_allele!="maternal")
                     {
                         match = true;
                     }
@@ -4555,7 +4555,7 @@ void FilterSvTrio::apply(const BedpeFile &svs, FilterResult &result) const
                 GeneSet genes = GeneSet::createFromText(sv.annotations()[i_gene], ',');
                 foreach(const QByteArray& gene, genes)
                 {
-                    if (imprinting.contains(gene) && (imprinting[gene]=="maternal" || imprinting[gene]=="both"))
+					if (imprinting.contains(gene) && imprinting[gene].source_allele!="paternal")
                     {
                         match = true;
                     }

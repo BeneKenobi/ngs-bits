@@ -11,31 +11,30 @@
 #include "TSVFileStream.h"
 #include "OntologyTermCollection.h"
 #include "FilterCascade.h"
-#include <QDialog>
 #include <QMultiMap>
 #include <QDir>
 #include "RtfDocument.h"
 #include "BedpeFile.h"
 #include "SomaticReportSettings.h"
 
-struct somaticVirus
+struct CPPNGSDSHARED_EXPORT SomaticVirusInfo
 {
-	QByteArray chr_;
-	int start_;
-	int end_;
-	QByteArray name_;
-	int reads_;
-	double coverage_;
-	int mismatches_;
-	double idendity_;
+	QByteArray chr;
+	int start;
+	int end;
+	QByteArray name;
+	int reads;
+	double coverage;
+	int mismatches;
+	double idendity;
 
 	///Virus gene, extracted from name_ if possible
 	QByteArray virusGene() const
 	{
-		QByteArray gene_name = name_;
-		if(name_.split('_').count() > 1)
+		QByteArray gene_name = name;
+		if(name.split('_').count() > 1)
 		{
-			QByteArray reduced_name = name_.split('_').at(0) + "_";
+			QByteArray reduced_name = name.split('_').at(0) + "_";
 			gene_name = gene_name.replace(reduced_name,"");
 			return gene_name;
 		}
@@ -45,16 +44,16 @@ struct somaticVirus
 	QByteArray virusName() const
 	{
 		QByteArray virus_name = "";
-		if(name_.split('_').count() > 0)
+		if(name.split('_').count() > 0)
 		{
-			virus_name = name_.split('_').at(0);
+			virus_name = name.split('_').at(0);
 		}
 		return virus_name;
 	}
 };
 
 ///creates a somatic RTF report
-class SomaticReportHelper
+class CPPNGSDSHARED_EXPORT SomaticReportHelper
 {
 public:
 	///Constructor loads data into class
@@ -140,7 +139,7 @@ private:
 	CnvList cnvs_;
 
 	//Somatic viruses (original file usually in tumor dir)
-	QList<somaticVirus> validated_viruses_;
+	QList<SomaticVirusInfo> validated_viruses_;
 
 	NGSD db_;
 
@@ -149,9 +148,6 @@ private:
 
 	//Processing system data
 	ProcessingSystemData processing_system_data_;
-
-	//genes included in target panel
-	GeneSet target_genes_;
 
 	//genes that are printed on last report page for EBM billing. List is to be filled in snvTable()
 	GeneSet ebm_genes_;

@@ -50,9 +50,7 @@ SOURCES += main.cpp\
     SequencingRunWidget.cpp \
     AnalysisStatusWidget.cpp \
     VariantTable.cpp \
-    RtfDocument.cpp \
     SampleSearchWidget.cpp \
-    SomaticReportHelper.cpp \
     SampleRelationDialog.cpp \
     ProcessedSampleSelector.cpp \
     FilterWidgetCNV.cpp \
@@ -60,7 +58,6 @@ SOURCES += main.cpp\
     FilterWidget.cpp \
     ReportVariantDialog.cpp \
     GSvarHelper.cpp \
-    SomaticRnaReport.cpp \
     ProcessedSampleDataDeletionDialog.cpp \
     VariantWidget.cpp \
     ProcessingSystemWidget.cpp \
@@ -89,7 +86,6 @@ SOURCES += main.cpp\
     EvaluationSheetEditDialog.cpp \
     PublishedVariantsWidget.cpp \
     PreferredTranscriptsWidget.cpp\
-    TumorOnlyReportWorker.cpp \
     TumorOnlyReportDialog.cpp \
     CfDNAPanelDesignDialog.cpp \
     DiseaseCourseWidget.cpp \
@@ -97,7 +93,8 @@ SOURCES += main.cpp\
     SomaticVariantInterpreterWidget.cpp \
     AlleleBalanceCalculator.cpp \
     ExpressionDataWidget.cpp \
-    GapClosingDialog.cpp
+    GapClosingDialog.cpp \
+    DatabaseServiceLocal.cpp
 HEADERS += MainWindow.h \
     ExternalToolDialog.h \
     GlobalServiceProvider.h \
@@ -141,9 +138,7 @@ HEADERS += MainWindow.h \
     SequencingRunWidget.h \
     AnalysisStatusWidget.h \
     VariantTable.h \
-    RtfDocument.h \
     SampleSearchWidget.h \
-    SomaticReportHelper.h \
     SampleRelationDialog.h \
     ProcessedSampleSelector.h \
     FilterWidgetCNV.h \
@@ -151,7 +146,6 @@ HEADERS += MainWindow.h \
     FilterWidget.h \
     ReportVariantDialog.h \
     GSvarHelper.h \
-    SomaticRnaReport.h \
     ProcessedSampleDataDeletionDialog.h \
     VariantWidget.h \
     ProcessingSystemWidget.h \
@@ -180,7 +174,6 @@ HEADERS += MainWindow.h \
     EvaluationSheetEditDialog.h \
     PublishedVariantsWidget.h \
     PreferredTranscriptsWidget.h \
-    TumorOnlyReportWorker.h \
     TumorOnlyReportDialog.h \
     CfDNAPanelDesignDialog.h \
     DiseaseCourseWidget.h \
@@ -188,7 +181,9 @@ HEADERS += MainWindow.h \
     SomaticVariantInterpreterWidget.h \
     AlleleBalanceCalculator.h \
     ExpressionDataWidget.h \
-    GapClosingDialog.h
+    GapClosingDialog.h \
+    DatabaseService.h \
+    DatabaseServiceLocal.h
 FORMS    += MainWindow.ui \
     ExternalToolDialog.ui \
     ReportDialog.ui \
