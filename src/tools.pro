@@ -421,3 +421,7 @@ SUBDIRS += BedpeAnnotateGnomadSv
 tools-TEST.depends += BedpeAnnotateGnomadSv
 BedpeAnnotateGnomadSv.depends = cppNGSD
 
+SUBDIRS += NGSDExportSV
+tools-TEST.depends += NGSDExportSV
+NGSDExportSV.depends = cppNGSD
+
