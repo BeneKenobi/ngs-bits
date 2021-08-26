@@ -434,3 +434,6 @@ VariantRanking.depends = cppNGS
 SUBDIRS += SplicingToBed
 tools-TEST.depends += SplicingToBed
 SplicingToBed.depends = cppNGSD
+
+SUBDIRS += GraphHPO
+GraphHPO.depends = cppNGS
