@@ -6,18 +6,22 @@
 #include <QByteArray>
 #include <QString>
 #include <QHash>
+#include <QSet>
 #include <QList>
 #include <QStringList>
 #include <QTextStream>
+#include <cmath>
 
 
 struct NodeContent
 {
-    double no_of_diseases;
+    int associated_diseases;
+    int directly_associated_diseases;
     double information_content;
 
     NodeContent()
-        : no_of_diseases(0.0),
+        : associated_diseases(0),
+          directly_associated_diseases(0),
           information_content(0.0)
     {
     }
@@ -60,6 +64,7 @@ private:
         return hpo_graph;
     }
 
+    // parse diseases associated with each HPO term
     QHash<QString, QStringList> parseAnnotations(const QString &file)
     {
         QHash<QString, QStringList> annotations;
@@ -77,6 +82,7 @@ private:
                 continue;
             }
 
+            // file format: 1st column: DatabaseID; 4th column: HPO_ID
             QStringList anno = line.split("\t");
 
             if(!annotations.contains(anno.at(3)))
@@ -84,6 +90,7 @@ private:
                 annotations.insert(anno.at(3), QStringList());
             }
 
+            // add the disease (ID) to the list of associated diseases for the HPO term
             if(!annotations[anno.at(3)].contains(anno.at(0)))
             {
                 annotations[anno.at(3)].append(anno.at(0));
@@ -93,6 +100,7 @@ private:
         return annotations;
     }
 
+    // parse HPO terms associated with each gene
     QHash<QString, QStringList> parseAssociatedPhenotypes(const QString &file)
     {
         QHash<QString, QStringList> associated_terms;
@@ -110,6 +118,7 @@ private:
                 continue;
             }
 
+            // file format: 2nd column: entrez-gene-symbol; 3rd column: HPO-Term-ID
             QStringList entry = line.split("\t");
 
             if(!associated_terms.contains(entry.at(1)))
@@ -124,6 +133,34 @@ private:
         }
 
         return associated_terms;
+    }
+
+    // write number of (directly) associated diseases into node content
+    /*void countAssociatedDiseases(Graph<NodeContent, EdgeContent> &graph, QHash<QString, QStringList> &annotations)
+    {
+        Graph<NodeContent, EdgeContent>::NodePointer node;
+        foreach(node, graph.adjacencyList().keys())
+        {
+            node.data()->nodeContent().directly_associated_diseases = annotations[node.data()->nodeName()].size();
+        }
+    }*/
+
+    // recursively count number of directly and indirectly associated diseases for a term
+    QSet<QString> countAssociatedDiseases(Graph<NodeContent, EdgeContent> &graph, QHash<QString, QStringList> &annotations,
+                                QString node_name)
+    {
+        QSet<QString> associated_diseases = QSet<QString>::fromList(annotations[node_name]);
+        graph.getNode(node_name).data()->nodeContent().directly_associated_diseases = associated_diseases.size();
+
+        Graph<NodeContent, EdgeContent>::NodePointer node;
+        foreach(node, graph.getAdjacentNodes(node_name))
+        {
+            associated_diseases.unite(countAssociatedDiseases(graph, annotations, node.data()->nodeName()));
+        }
+
+        graph.getNode(node_name).data()->nodeContent().associated_diseases = associated_diseases.size();
+
+        return associated_diseases;
     }
 
 public:
@@ -150,6 +187,35 @@ public:
         QHash<QString, QStringList> annotations = parseAnnotations(getInfile("annotation"));
 
         QHash<QString, QStringList> associated_terms = parseAssociatedPhenotypes(getInfile("associated-terms"));
+
+        // recursively count number of associated diseases, starting from root node "all"
+        int total_diseases = countAssociatedDiseases(hpo_graph, annotations, "HP:0000001").size();
+
+        // determine information content of each node
+        Graph<NodeContent, EdgeContent>::NodePointer node;
+        foreach(node, hpo_graph.adjacencyList().keys())
+        {
+            if(node.data()->nodeContent().associated_diseases != 0)
+            {
+                node.data()->nodeContent().information_content =
+                        -log((double) node.data()->nodeContent().associated_diseases / total_diseases);
+            }
+            else
+            {
+                node.data()->nodeContent().information_content = 0;
+            }
+        }
+
+        /*QTextStream out(stdout);
+        //Graph<NodeContent, EdgeContent>::NodePointer node;
+        foreach(node, hpo_graph.adjacencyList().keys())
+        {
+            out << node.data()->nodeName() << "\t"
+                << node.data()->nodeContent().directly_associated_diseases << "\t"
+                << node.data()->nodeContent().associated_diseases << "\t"
+                << node.data()->nodeContent().information_content << endl;
+        }
+        out << total_diseases << endl;*/
 
         hpo_graph.store(getOutfile("out"));
     }
