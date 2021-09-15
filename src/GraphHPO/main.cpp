@@ -43,6 +43,10 @@ class ConcreteTool
     Q_OBJECT
 
 private:
+    QHash<QString, QStringList> annotations;
+    QHash<QString, QStringList> associated_terms;
+    Graph<NodeContent, EdgeContent> hpo_graph;
+
     // create a directed graph from the ontology term collection
     Graph<NodeContent, EdgeContent> parseTermCollection(OntologyTermCollection &terms)
     {
@@ -118,49 +122,147 @@ private:
                 continue;
             }
 
-            // file format: 2nd column: entrez-gene-symbol; 3rd column: HPO-Term-ID
+            // file format: 1st column: entrez-gene-id; 3rd column: HPO-Term-ID
             QStringList entry = line.split("\t");
 
-            if(!associated_terms.contains(entry.at(1)))
+            if(!associated_terms.contains(entry.at(0)))
             {
-                associated_terms.insert(entry.at(1), QStringList());
+                associated_terms.insert(entry.at(0), QStringList());
             }
 
-            if(!associated_terms[entry.at(1)].contains(entry.at(2)))
+            if(!associated_terms[entry.at(0)].contains(entry.at(2)))
             {
-                associated_terms[entry.at(1)].append(entry.at(2));
+                associated_terms[entry.at(0)].append(entry.at(2));
             }
         }
 
         return associated_terms;
     }
 
-    // write number of (directly) associated diseases into node content
-    /*void countAssociatedDiseases(Graph<NodeContent, EdgeContent> &graph, QHash<QString, QStringList> &annotations)
-    {
-        Graph<NodeContent, EdgeContent>::NodePointer node;
-        foreach(node, graph.adjacencyList().keys())
-        {
-            node.data()->nodeContent().directly_associated_diseases = annotations[node.data()->nodeName()].size();
-        }
-    }*/
-
     // recursively count number of directly and indirectly associated diseases for a term
-    QSet<QString> countAssociatedDiseases(Graph<NodeContent, EdgeContent> &graph, QHash<QString, QStringList> &annotations,
-                                QString node_name)
+    QSet<QString> countAssociatedDiseases(QString node_name)
     {
         QSet<QString> associated_diseases = QSet<QString>::fromList(annotations[node_name]);
-        graph.getNode(node_name).data()->nodeContent().directly_associated_diseases = associated_diseases.size();
+        hpo_graph.getNode(node_name).data()->nodeContent().directly_associated_diseases = associated_diseases.size();
 
         Graph<NodeContent, EdgeContent>::NodePointer node;
-        foreach(node, graph.getAdjacentNodes(node_name))
+        foreach(node, hpo_graph.getAdjacentNodes(node_name))
         {
-            associated_diseases.unite(countAssociatedDiseases(graph, annotations, node.data()->nodeName()));
+            associated_diseases.unite(countAssociatedDiseases(node.data()->nodeName()));
         }
 
-        graph.getNode(node_name).data()->nodeContent().associated_diseases = associated_diseases.size();
+        hpo_graph.getNode(node_name).data()->nodeContent().associated_diseases = associated_diseases.size();
 
         return associated_diseases;
+    }
+
+    // find the most informative common ancestor (MICA) of two terms and return its information content
+    double findMICA(QString term_1, QString term_2, OntologyTermCollection& terms)
+    {
+        if(!hpo_graph.hasNode(term_1) || !hpo_graph.hasNode(term_2))
+        {
+            THROW(ArgumentException, "At least one term is not contained in the graph.");
+        }
+
+        QSet<QString> parents_term_1;
+        parents_term_1.insert(term_1);
+        QSet<QString> parents_term_2;
+        parents_term_2.insert(term_2);
+        QSet<QString> current_terms_1;
+        current_terms_1.insert(term_1);
+        QSet<QString> current_terms_2;
+        current_terms_2.insert(term_2);
+
+        //QTextStream out(stdout);
+
+        // go up the DAG until at least one common ancestor was found
+        while(!parents_term_1.intersects(parents_term_2))
+        {
+            if(!terms.containsByID(term_1.toUtf8()) || !terms.containsByID(term_2.toUtf8()))
+            {
+                THROW(ArgumentException, "At least one term is not contained in the ontology");
+            }
+
+            QSet<QString> new_terms;
+            foreach(QString term, current_terms_1)
+            {
+                foreach(QString parent, terms.getByID(term.toUtf8()).parentIDs())
+                {
+                    parents_term_1.insert(parent);
+                    new_terms.insert(parent);
+                }
+            }
+            current_terms_1 = new_terms;
+
+            new_terms.clear();
+            foreach(QString term, current_terms_2)
+            {
+                foreach(QString parent, terms.getByID(term.toUtf8()).parentIDs())
+                {
+                    parents_term_2.insert(parent);
+                    new_terms.insert(parent);
+                }
+            }
+            current_terms_2 = new_terms;
+        }
+
+        // determine the maximum information content (in case the intersection contains more than one ancestor)
+        double max_information_content = 0.0;
+        foreach(QString term, parents_term_1.intersect(parents_term_2))
+        {
+            double information_content = hpo_graph.getNode(term).data()->nodeContent().information_content;
+            //out << term_1 << "\t" << term_2 << "\t" << term << "\t" << information_content << endl;
+            if(information_content > max_information_content)
+            {
+                max_information_content = information_content;
+            }
+        }
+
+        return max_information_content;
+    }
+
+    // determine the score for a gene given a list of HPO-terms (maximum similarity)
+    double scoreGene(QString gene_id, QStringList hpo_terms, OntologyTermCollection& terms)
+    {
+        if(!associated_terms.contains(gene_id))
+        {
+            return 0.0;
+        }
+
+        QList<double> scores;
+        //QTextStream out(stdout);
+
+        foreach(QString gene_term, associated_terms[gene_id])
+        {
+            // terms associated with genes could also be from another category, not just from phenotypic abnormality
+            if(!hpo_graph.hasNode(gene_term))
+            {
+                continue;
+            }
+
+            double max_score = 0.0;
+
+            // take the phenotype term with maximum similarity with the current gene-associated term
+            foreach(QString hpo_term, hpo_terms)
+            {
+                double score = findMICA(gene_term, hpo_term, terms);
+                if(score > max_score)
+                {
+                    max_score = score;
+                }
+            }
+            scores.append(max_score);
+            //out << gene_term << "\t" << max_score << endl;
+        }
+
+        // average over the scores for all terms associated with the gene
+        double sum = 0.0;
+        foreach(double score, scores)
+        {
+            sum += score;
+        }
+
+        return sum / scores.size();
     }
 
 public:
@@ -172,27 +274,25 @@ public:
     virtual void setup()
     {
         setDescription("Creates simple representation of HPO directed acyclic graph.");
+        addInfile("in", "Input TSV file with comma-separated list of HPO terms and gene (Entrez Gene ID)", false);
         addInfile("obo", "Human phenotype ontology obo file.", false);
         addInfile("annotation", "TSV file with HPO annotations to diseases", false);
         addInfile("associated-terms", "TSV file with all associated HPO terms for each gene", false);
-        addOutfile("out", "Output TSV file with edges.", false);
+        addOutfile("out", "Output TSV file with a score for each HPO-term list/gene combination", false);
     }
 
     virtual void main()
     {
         // init
         OntologyTermCollection terms(getInfile("obo"), true);
-        Graph<NodeContent, EdgeContent> hpo_graph = parseTermCollection(terms);
+        hpo_graph = parseTermCollection(terms).extractSubgraph("HP:0000118");
 
-        // extract Phenotypic abnormality subgraph
-        hpo_graph = hpo_graph.extractSubgraph("HP:0000118");
+        annotations = parseAnnotations(getInfile("annotation"));
 
-        QHash<QString, QStringList> annotations = parseAnnotations(getInfile("annotation"));
-
-        QHash<QString, QStringList> associated_terms = parseAssociatedPhenotypes(getInfile("associated-terms"));
+        associated_terms = parseAssociatedPhenotypes(getInfile("associated-terms"));
 
         // recursively count number of associated diseases, starting from root node "Phenotypic abnormality"
-        int total_diseases = countAssociatedDiseases(hpo_graph, annotations, "HP:0000118").size();
+        int total_diseases = countAssociatedDiseases("HP:0000118").size();
 
         // determine information content of each node
         Graph<NodeContent, EdgeContent>::NodePointer node;
@@ -209,20 +309,32 @@ public:
             }
         }
 
+        //hpo_graph.store(getOutfile("out"));
+
         /*QTextStream out(stdout);
-        out << hpo_graph.adjacencyList().keys().size() << endl;
+        out << findMICA("HP:0000494", "HP:0000506", terms) << endl;*/
 
-        //Graph<NodeContent, EdgeContent>::NodePointer node;
-        foreach(node, hpo_graph.adjacencyList().keys())
+        QSharedPointer<QFile> writer = Helper::openFileForWriting(getOutfile("out"));
+        QTextStream stream(writer.data());
+        stream << "#hpo_terms\tgene_id\tscore" << endl;
+
+        QSharedPointer<QFile> reader = Helper::openFileForReading(getInfile("in"));
+        QTextStream in(reader.data());
+
+        while(!in.atEnd())
         {
-            out << node.data()->nodeName() << "\t"
-                << node.data()->nodeContent().directly_associated_diseases << "\t"
-                << node.data()->nodeContent().associated_diseases << "\t"
-                << node.data()->nodeContent().information_content << endl;
-        }
-        out << total_diseases << endl;*/
+            QString line = in.readLine();
 
-        hpo_graph.store(getOutfile("out"));
+            // skip comments
+            if(line.startsWith("#"))
+            {
+                continue;
+            }
+
+            QStringList entry = line.split("\t");
+            double score = scoreGene(entry.at(1), entry.at(0).split(","), terms);
+            stream << line << "\t" << score << endl;
+        }
     }
 };
 
