@@ -69,6 +69,8 @@ class CPPNGSSHARED_EXPORT Graph
         int getIndegree(const QString& name);
         int getOutdegree(const QString& name);
 
+        Graph<NodeType, EdgeType> extractSubgraph(const QString& root_node_name);
+
         void store(const QString& file);
 
     protected:
@@ -466,6 +468,50 @@ int Graph<NodeType, EdgeType>::getOutdegree(const QString& name)
     else
     {
         THROW(Exception, "Invalid use of method: Only for directed graphs");
+    }
+}
+
+// extract subgraph of directed graph descended from given parent (root) node
+template <typename NodeType, typename EdgeType>
+Graph<NodeType, EdgeType> Graph<NodeType, EdgeType>::extractSubgraph(const QString& root_node_name)
+{
+    if(!directed_)
+    {
+        THROW(Exception, "Invalid use of method: Only for directed graphs");
+    }
+
+    if(this->hasNode(root_node_name))
+    {
+        Graph<NodeType, EdgeType> graph(true);
+
+        // start with list containing the edges going out from the root node
+        QList<EdgePointer> edges_to_add = this->getAdjacentEdges(root_node_name);
+        QMutableListIterator<EdgePointer> iter(edges_to_add);
+
+        while(iter.hasNext())
+        {
+            // add the current edge to the subgraph
+            EdgePointer current_edge = iter.next();
+            graph.addNode(current_edge.data()->node1(), false);
+            graph.addNode(current_edge.data()->node2(), false);
+            graph.addEdge(current_edge.data()->node1(), current_edge.data()->node2(), current_edge.data()->edgeContent());
+
+            // add all edges going out from the destination of the current edge to the list
+            foreach(EdgePointer edge, this->getAdjacentEdges(current_edge.data()->node2().data()->nodeName()))
+            {
+                if(!graph.hasEdge(edge))
+                {
+                    iter.insert(edge);
+                    iter.previous();
+                }
+            }
+        }
+
+        return graph;
+    }
+    else
+    {
+        THROW(ArgumentException, "Invalid argument: Requested root node does not exist");
     }
 }
 

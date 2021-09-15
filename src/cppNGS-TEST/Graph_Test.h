@@ -161,10 +161,10 @@ private slots:
         }
 
         // add some edges (regular pattern)
-        for(int i = 1; i <= 20; i++)
+        for(int i = 1; i < 20; i++)
         {
-            if(i < 20)
-            {
+            //if(i < 20)
+            //{
                 IS_TRUE(graph.addEdge(graph.getNode(QString::number(i)),
                                       graph.getNode(QString::number(i+1)),
                                       1));
@@ -180,13 +180,13 @@ private slots:
                                           graph.getNode("1"),
                                           3))
                 }
-            }
+            /*}
             else if(i == 20)
             {
                 IS_TRUE(graph.addEdge(graph.getNode("20"),
                                       graph.getNode("1"),
                                       1))
-            }
+            }*/
         }
 
         // test behavior when trying to add nodes or edges that already exist
@@ -204,10 +204,13 @@ private slots:
         IS_TRUE(graph.addEdge("1", 1, "11", 3, 10));
         IS_TRUE(graph.addEdge("20", 0, "22", 2, 1));
 
+        IS_TRUE(graph.addEdge("20", 0, "25", 1, 1));
+        IS_TRUE(graph.addEdge("22", 2, "24", 0, 1));
+
         // test behavior when checking if nodes exist / accessing nodes
         IS_TRUE(graph.hasNode("4"));
         IS_TRUE(graph.hasNode("23"));
-        IS_FALSE(graph.hasNode("24"));
+        IS_FALSE(graph.hasNode("26"));
         S_EQUAL(graph.getNode("16").data()->nodeName(), "16");
         IS_THROWN(ArgumentException, graph.getNode("99"));
 
@@ -236,7 +239,7 @@ private slots:
         IS_THROWN(ArgumentException, graph.isAdjacent("99", "20"));
 
         // check connectivity: node in- and outdegrees
-        for(int i = 1; i <= 23; i++)
+        for(int i = 1; i <= 25; i++)
         {
             if(i%2 == 0)
             {
@@ -245,7 +248,11 @@ private slots:
                 {
                     case 2:
                     case 20:
+                    case 22:
                         I_EQUAL(graph.getOutdegree(QString::number(i)), 2);
+                        break;
+                    case 24:
+                        I_EQUAL(graph.getOutdegree(QString::number(i)), 0);
                         break;
                     default:
                         I_EQUAL(graph.getOutdegree(QString::number(i)), 1);
@@ -256,7 +263,7 @@ private slots:
                 switch(i)
                 {
                     case 1:
-                        I_EQUAL(graph.getIndegree(QString::number(i)), 2);
+                        I_EQUAL(graph.getIndegree(QString::number(i)), 1);
                         I_EQUAL(graph.getOutdegree(QString::number(i)), 3);
                         break;
                     case 11:
@@ -265,6 +272,10 @@ private slots:
                         break;
                     case 21:
                     case 23:
+                        I_EQUAL(graph.getIndegree(QString::number(i)), 1);
+                        I_EQUAL(graph.getOutdegree(QString::number(i)), 0);
+                        break;
+                    case 25:
                         I_EQUAL(graph.getIndegree(QString::number(i)), 1);
                         I_EQUAL(graph.getOutdegree(QString::number(i)), 0);
                         break;
@@ -277,5 +288,17 @@ private slots:
 
         // test behavior when trying to use method that is only available for undirected graphs
         IS_THROWN(Exception, graph.getDegree("1"));
+
+        // test extracting a subgraph starting from node 20
+        Graph<int, int> subgraph = graph.extractSubgraph("20");
+
+        IS_TRUE(subgraph.hasNode("20"));
+        IS_TRUE(subgraph.hasNode("22"));
+        IS_TRUE(subgraph.hasNode("23"));
+        IS_TRUE(subgraph.hasNode("24"));
+        IS_TRUE(subgraph.hasNode("25"));
+        IS_FALSE(subgraph.hasNode("19"));
+        IS_FALSE(subgraph.hasNode("1"));
+        I_EQUAL(subgraph.adjacencyList().size(), 5);
     }
 };
