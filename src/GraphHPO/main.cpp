@@ -184,12 +184,15 @@ public:
         OntologyTermCollection terms(getInfile("obo"), true);
         Graph<NodeContent, EdgeContent> hpo_graph = parseTermCollection(terms);
 
+        // extract Phenotypic abnormality subgraph
+        hpo_graph = hpo_graph.extractSubgraph("HP:0000118");
+
         QHash<QString, QStringList> annotations = parseAnnotations(getInfile("annotation"));
 
         QHash<QString, QStringList> associated_terms = parseAssociatedPhenotypes(getInfile("associated-terms"));
 
-        // recursively count number of associated diseases, starting from root node "all"
-        int total_diseases = countAssociatedDiseases(hpo_graph, annotations, "HP:0000001").size();
+        // recursively count number of associated diseases, starting from root node "Phenotypic abnormality"
+        int total_diseases = countAssociatedDiseases(hpo_graph, annotations, "HP:0000118").size();
 
         // determine information content of each node
         Graph<NodeContent, EdgeContent>::NodePointer node;
@@ -207,6 +210,8 @@ public:
         }
 
         /*QTextStream out(stdout);
+        out << hpo_graph.adjacencyList().keys().size() << endl;
+
         //Graph<NodeContent, EdgeContent>::NodePointer node;
         foreach(node, hpo_graph.adjacencyList().keys())
         {
