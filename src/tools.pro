@@ -434,3 +434,7 @@ VariantRanking.depends = cppNGS
 SUBDIRS += SplicingToBed
 tools-TEST.depends += SplicingToBed
 SplicingToBed.depends = cppNGSD
+
+SUBDIRS += VcfLiftover
+tools-TEST.depends += VcfLiftover
+VcfLiftover.depends = cppNGS

@@ -5,6 +5,8 @@
 #include "BamReader.h"
 #include "FilterCascade.h"
 #include "GenomeBuild.h"
+#include "HttpHandler.h"
+#include "Settings.h"
 
 //Helper datastructure for gene impringing info.
 struct ImprintingInfo
@@ -75,6 +77,10 @@ public:
 
 	///Converts the 3letter ancestry code to a human-readable text, see http://m.ensembl.org/Help/Faq?id=532
 	static QString populationCodeToHumanReadable(QString code);
+
+
+	///Performs a lift-over of a given region using a lift-over webservice
+	static BedLine liftOver(const Chromosome& chr, int start, int end, bool hg38_to_hg19 = false);
 
 private:
 	///Constructor declared away

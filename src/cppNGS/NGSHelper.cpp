@@ -559,6 +559,32 @@ QString NGSHelper::populationCodeToHumanReadable(QString code)
 	else THROW(ProgrammingException, "Unknown population code '" + code + "'!");
 }
 
+BedLine NGSHelper::liftOver(const Chromosome& chr, int start, int end, bool hg38_to_hg19)
+{
+	//special handling of chrMT (they are the same for GRCh37 and GRCh38)
+	if (chr.strNormalized(true)=="chrMT") return BedLine(chr, start, end);
+
+	//convert start to BED format (0-based)
+	start -= 1;
+
+	//call lift-over webservice
+	QString url = Settings::string("liftover_webservice") + "?chr=" + chr.strNormalized(true) + "&start=" + QString::number(start) + "&end=" + QString::number(end);
+	if (hg38_to_hg19) url += "&dir=hg38_hg19";
+	QString output = HttpHandler(HttpRequestHandler::ProxyType::NONE).get(url);
+
+	//handle error from webservice
+	if (output.contains("ERROR")) THROW(ArgumentException, "genomic coordinate lift-over failed: " + output);
+
+	//convert output to region
+	BedLine region = BedLine::fromString(output);
+	if (!region.isValid()) THROW(ArgumentException, "genomic coordinate lift-over failed: Could not convert output '" + output + "' to region");
+
+	//revert to 1-based
+	region.setStart(region.start()+1);
+
+	return region;
+}
+
 void NGSHelper::softClipAlignment(BamAlignment& al, int start_ref_pos, int end_ref_pos)
 {
 	QList<CigarOp> old_CIGAR = al.cigarData();
