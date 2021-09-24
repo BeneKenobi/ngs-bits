@@ -5,7 +5,7 @@
 #include "BamReader.h"
 #include "FilterCascade.h"
 #include "GenomeBuild.h"
-#include "HttpHandler.h"
+#include "HttpRequestHandler.h"
 #include "Settings.h"
 
 //Helper datastructure for gene impringing info.

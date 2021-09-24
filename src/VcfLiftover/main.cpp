@@ -58,10 +58,7 @@ public:
 
 		//prepare output
 		QSharedPointer<QFile> out_p = Helper::openFileForWriting(out, true);
-		QTextStream out_stream(out_p.data());
 		QSharedPointer<QFile> failed_p = Helper::openFileForWriting(failed, true);
-		QTextStream failed_stream(failed_p.data());
-
 
 		//load references
 		QSharedPointer<FastaFileIndex> genome_index_grch37 = QSharedPointer<FastaFileIndex>(new FastaFileIndex(ref_grch37));
@@ -73,7 +70,8 @@ public:
 		while(!in_p->atEnd())
 		{
 			QByteArray line = in_p->readLine();
-			if (!line.endsWith('\n')) line += '\n';
+			//cut newlines
+			line = line.replace("\n", "").replace("\r", "");
 
 			//skip empty lines
 			if (line.trimmed().isEmpty()) continue;
@@ -81,8 +79,24 @@ public:
 			//write out headers/comments unchanged
 			if (line.startsWith('#'))
 			{
-				out_p->write(line);
-				failed_p->write(line);
+				// write additional INFO column description
+				if (line.startsWith("#CHROM"))
+				{
+					out_p->write("##INFO=<ID=strand_changed,Number=1,Type=Flag,Description=\"Indicates if strand has changed\"\n");
+					failed_p->write("##INFO=<ID=Error_Comment,Number=1,Type=String,Description=\"Description of the liftover error\"\n");
+				}
+
+				// change entry for genome build
+				if (line.startsWith("##build="))
+				{
+					out_p->write("##build=GRCh38\n");
+					failed_p->write("r##build=GRCh37\n");
+					continue;
+				}
+
+				// write other comment lines unchanged
+				out_p->write(line + "\n");
+				failed_p->write(line + "\n");
 				continue;
 			}
 
@@ -115,18 +129,18 @@ public:
 			}
 			catch(Exception& e)
 			{
-				columns[VcfFile::INFO].append(";Error_Comment=Cannot_perform_liftover");
-				failed_p->write(columns.join('\t'));
-				if (debug) qDebug() << "Liftover failed for variant " << chr.str() << ":" << start << "-" << end << " " << ref << ">" << "obs ! (" << e.message() << ") ";
+				columns[VcfFile::INFO] += ";Error_Comment=Cannot_perform_liftover";
+				failed_p->write(columns.join('\t') + "\n");
+				if (debug) qDebug() << "Liftover failed for variant " << chr.str() << ":" << start << "-" << end << " " << ref << ">" << obs << "! (" << e.message() << ") ";
 				continue;
 			}
 
 			//check new chromosome is ok
 			if (!coords.chr().isNonSpecial())
 			{
-				columns[VcfFile::INFO].append(";Error_Comment=Liftover_on_special_chr");
-				failed_p->write(columns.join('\t'));
-				if (debug) qDebug() << "Liftover on special chr for variant " << chr.str() << ":" << start << "-" << end << " " << ref << ">" << "obs ! (" << coords.toString(true) << ") ";
+				columns[VcfFile::INFO] += ";Error_Comment=Liftover_on_special_chr";
+				failed_p->write(columns.join('\t') + "\n");
+				if (debug) qDebug() << "Liftover on special chr for variant " << chr.str() << ":" << start << "-" << end << " " << ref << ">" << obs << "! (" << coords.toString(true) << ") ";
 				continue;
 			}
 
@@ -144,9 +158,10 @@ public:
 				else
 				{
 					context_new.reverseComplement();
-					columns[VcfFile::INFO].append(";Error_Comment=Seq_context_changed(" + context_old + ">" + context_new + ")");
-					failed_p->write(columns.join('\t'));
-					if (debug) qDebug() << "Sequence context changed for variant " << chr.str() << ":" << start << "-" << end << " " << ref << ">" << "obs ! (" << context_old << ">" << context_new << ") ";
+					//TODO: remove newline
+					columns[VcfFile::INFO] += ";Error_Comment=Seq_context_changed(" + context_old + ">" + context_new + ")";
+					failed_p->write(columns.join('\t') + "\n");
+					if (debug) qDebug() << "Sequence context changed for variant " << chr.str() << ":" << start << "-" << end << " " << ref << ">" << obs <<"! (" << context_old << ">" << context_new << ") ";
 					continue;
 				}
 			}
@@ -154,7 +169,8 @@ public:
 			// valid liftover
 			columns[VcfFile::CHROM] = coords.chr().strNormalized(true);
 			columns[VcfFile::POS] = QByteArray::number(coords.start());
-			out_p->write(columns.join('\t'));
+			if (strand_changed) columns[VcfFile::INFO].append(";strand_changed");
+			out_p->write(columns.join('\t') + "\n");
 
 		}
 
